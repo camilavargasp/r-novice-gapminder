@@ -1,0 +1,492 @@
+---
+title: "Data Manipulation"
+author: "Camila Vargas"
+date: "10/21/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R for reproducible scientific analysis
+## Sofware Carpenty
+
+## Read data
+Make sure everyon has the gapminde data
+```{r}
+gapminder <- read.csv("data/gapminder_data.csv", stringsAsFactors = TRUE, header = TRUE)
+```
+
+
+## Intro
+- So far we have mainly used base R to wrangle and manipulate data. 
+- Which means you do not need to install any additional package.
+- Base R code is generally recognizable because it has a lot of bracket and parenthesis
+
+As we saw with Torin, to calculate the mean gdpPercap per continent we have to
+
+```{r}
+## Calculate mean of GDP per cap of countries within a continent
+mean(gapminder[gapminder$continent == "Africa", "gdpPercap"])
+
+mean(gapminder[gapminder$continent == "Americas", "gdpPercap"])
+
+mean(gapminder[gapminder$continent == "Asia", "gdpPercap"])
+```
+
+Not very intutive and there is a lot of repetition. Repeating yourself will cost time and there are more opportunity for errors.
+
+## Data Manipulation with dplyr
+
+We are now going to introduce two packages from the tidiverse suit of packages. 
+`dplyr` and `tidyr`
+
+```{r}
+##install.packages("dplyr") ## downloads the package from CRAN
+
+library(dplyr) ## loads the package function to our working session
+
+##install.packages("tidyverse")
+
+#library(tidyverse)
+
+```
+
+
+# dplyr
+- Provides useful functions for manipulating dataframe
+- Reducing the above repetition, therefor also the probability of making erros and saves itme in typing
+- It grammar its easier to read and undestand what is the code doing to the data
+
+
+## Using select() - subsets data column-wise. picks variables by their name
+
+- 1st argument is the dataframe
+- The subsequent arguments describe what to do with the data frame (you can refer to column in the data directly without using the $)
+- The result is a new data frame
+
+```{r}
+
+year_country_gdp <- select(gapminder, year, country, gdpPercap)
+
+```
+
+
+## filter() - pick varibles by their names. Subsets data row-wise by their value
+```{r}
+
+gdo_euro <- filter(gapminder, continent == "Europe")
+```
+
+
+##introducing the pipe operator %>%
+
+- Before we go any further, we should explore the new pipe operator that dplyr imports from the magrittr package. 
+- This is going to change your life. 
+- You no longer need to create multi-operation commands by nesting them inside each other or  make temporary variables. 
+- This syntax leads to code that is much easier to write and to read: it actually tells the story of your analysis.
+
+## Using select and filter together
+```{r}
+year_country_gdp_euro <- gapminder %>%
+  filter(continent == "Europe") %>% 
+  select(year, country, gdpPercap)
+
+##Code order matters
+year_country_gdp_cl <- gapminder %>%
+  select(year, country, gdpPercap) %>% 
+  filter(country == "Chile")
+  
+```
+
+
+## Challenge 1
+
+Write a single command (which can span multiple lines and includes pipes) that will produce a dataframe that has the African values for lifeExp, country and year, but not for other Continents. How many rows does your dataframe have and why?
+
+```{r}
+year_country_lifeExp_africa <- gapminder %>% 
+  filter(continent == "Africa") %>% 
+  select(year, country, lifeExp)
+
+```
+
+## group_by() and summarize() 
+
+```{r}
+gdp_bycontinent <- gapminder %>% 
+  group_by(continent) %>% 
+  summarise(mean_gdpPercap = mean(gdpPercap))
+```
+
+This is very powerful and it gets even better!
+You can define more ethan one variable with `summarize()`
+
+```{r}
+
+gdp_pop_continent_year <- gapminder %>%
+    group_by(continent, year) %>%
+    summarize(mean_gdpPercap = mean(gdpPercap),
+              sd_gdpPercap = sd(gdpPercap),
+              mean_pop = mean(pop),
+              sd_pop = sd(pop))
+
+```
+
+
+## `count()` and `n()`
+
+A very common operation is to count the number of observations for each group. The `dplyr` package comes with two related functions that help with this.
+
+- For instance, if we wanted to check the number of countries included in the dataset for the year 2002, we can use the `count()` function. It takes the name of one or more columns that contain the groups we are interested in. 
+
+**counts number of observations in each group within a specific column**
+
+- We can optionally sort the results in descending order by adding `sort=TRUE`:
+
+```{r}
+gapminder %>%
+    filter(year == 2002) %>%
+    count(continent, sort = TRUE)
+```
+
+- If we need to use the number of observations in calculations, the `n()` function is useful. 
+- It will return the total number of observations in the current group rather than counting the number of observations in each group within a specific column
+
+```{r}
+gapminder %>%
+    group_by(continent) %>%
+    summarize(se_le = sd(lifeExp)/sqrt(n()))
+```
+
+You can also chain together several summary operations; in this case calculating the minimum, maximum, mean and se of each continent’s per-country life-expectancy:
+
+```{r}
+gapminder %>%
+    group_by(continent) %>%
+    summarize(
+      mean_le = mean(lifeExp),
+      min_le = min(lifeExp),
+      max_le = max(lifeExp),
+      se_le = sd(lifeExp)/sqrt(n()))
+```
+
+
+## mutate() creates new variables with functions of existing variables
+```{r}
+gdp_pop_continent_year <- gapminder %>%
+    mutate(gdp_billion = gdpPercap*pop/10^9) %>%
+    group_by(continent,year) %>%
+    summarize(mean_gdpPercap = mean(gdpPercap),
+              sd_gdpPercap = sd(gdpPercap),
+              mean_pop = mean(pop),
+              sd_pop = sd(pop),
+              mean_gdp_billion = mean(gdp_billion),
+              sd_gdp_billion = sd(gdp_billion))
+```
+
+## Connect mutate with logical filtering: ifelse
+
+- When creating new variables, we can hook this with a logical condition. 
+- A simple combination of `mutate()` and `ifelse()` facilitates filtering right where it is needed: in the moment of creating something new. 
+- This easy-to-read statement is a fast and powerful way of discarding certain data (even though the overall dimension of the data frame will not change) or for updating values depending on this given condition.
+
+```{r}
+## keeping all data but "filtering" after a certain condition
+# calculate GDP only for people with a life expectation above 25
+
+gdp_pop_continent_year_above25 <- gapminder %>%
+    mutate(gdp_billion = ifelse(lifeExp > 25, gdpPercap * pop / 10^9, NA)) %>%
+    group_by(continent, year) %>%
+    summarize(mean_gdpPercap = mean(gdpPercap),
+              sd_gdpPercap = sd(gdpPercap),
+              mean_pop = mean(pop),
+              sd_pop = sd(pop),
+              mean_gdp_billion = mean(gdp_billion),
+              sd_gdp_billion = sd(gdp_billion))
+
+## updating only if certain condition is fullfilled
+# for life expectations above 40 years, the gpd to be expected in the future is scaled
+gdp_future_continent_year_high_lifeExp <- gapminder %>%
+    mutate(gdp_futureExpectation = ifelse(lifeExp > 40, gdpPercap * 1.5, gdpPercap)) %>%
+    group_by(continent, year) %>%
+    summarize(mean_gdpPercap = mean(gdpPercap),
+              mean_gdpPercap_expected = mean(gdp_futureExpectation))
+
+```
+
+## Combining `dplyr` and `ggplot2`
+```{r}
+##install.packages("ggplot")
+
+library(ggplot2)
+
+```
+
+
+In the plotting lesson we looked at how to make a multi-panel figure by adding a layer of facet panels using ggplot2. Here is the code we used (with some extra comments):
+
+Using base R code structure
+We have to create intermediate variables
+
+```{r}
+# Get the start letter of each country
+starts.with <- substr(gapminder$country, start = 1, stop = 1)
+
+# Filter countries that start with "A" or "Z"
+az.countries <- gapminder[starts.with %in% c("A", "Z"), ]
+
+# Make the plot
+ggplot(data = az.countries, 
+       aes(x = year, 
+           y = lifeExp, 
+           color = continent)) +
+  geom_line() + 
+  facet_wrap( ~ country)
+
+```
+
+Using the `tidyverse` sintax, we can pipe through each step and even my data gets pass on into the `ggplot()` function.
+
+```{r}
+gapminder %>%
+   # Get the start letter of each country
+   mutate(startsWith = substr(country, start = 1, stop = 1)) %>%
+   # Filter countries that start with "A" or "Z"
+   filter(startsWith %in% c("A", "Z")) %>%
+   # Make the plot
+   ggplot(aes(x = year, 
+              y = lifeExp, 
+              color = continent)) +
+   geom_line() +
+   facet_wrap( ~ country)
+```
+
+Using `dplyr` functions also helps us simplify things, for example we could combine the first two steps:
+
+```{r}
+gapminder %>%
+    # Filter countries that start with "A" or "Z"
+	filter(substr(country, start = 1, stop = 1) %in% c("A", "Z")) %>%
+	# Make the plot
+	ggplot(aes(x = year, 
+	           y = lifeExp, 
+	           color = continent)) +
+	geom_line() +
+	facet_wrap( ~ country)
+```
+
+##Advance Challenge
+Calculate the average life expectancy in 2002 of 2 randomly selected countries for each continent. Then arrange the continent names in reverse order. Hint: Use the dplyr functions `arrange()` and `sample_n()`, they have similar syntax to other `dplyr` functions.
+
+
+```{r}
+lifeExp_2countries_bycontinents <- gapminder %>%
+   filter(year==2002) %>%
+   group_by(continent) %>%
+   sample_n(2) %>%
+   summarize(mean_lifeExp=mean(lifeExp)) %>%
+   arrange(desc(mean_lifeExp))
+```
+
+
+# Tidyr
+
+- The tidyr package is for reshaping data. You won’t use tidyr functions as much as you use dplyr functions, but it is incredibly powerful when you need it.
+- I’m going to start by introducing the concept of wide-data and long-data
+- The long format is when each column is a variable and each row is an observation, and this under a programming perspective is known as Tidy Data
+- **Tidy data:** Tidy data has a simple convention: put variables in the columns and observations in the rows.
+- Wide-format: Each row is generally a site, subject or patience and you have multiple observation variables containing the same type of data. These can be either repeated observations over time, or observation of multiple variables (or a mix of both.
+- Generally, the wide format is easier to input data, however, R’s functions have been design assuming the data is in a long format
+- Here we are going to see how to transform the shape of your data regardless of the original form
+
+## Getting Started
+```{r}
+#install.packages("tidyr")
+library(tidyr)
+```
+
+Lets start by looking at the structure of the gapminder data
+
+```{r}
+str(gapminder)
+```
+
+## Challenge 1
+Is gapminder a purely long, purely wide, or some intermediate format?
+
+ANSWER
+The original gapminder data.frame is in an intermediate format. It is not purely long since it had multiple observation variables (pop,lifeExp,gdpPercap).
+
+
+- Sometimes an intermediate format is prefered. Eventhough tidy data is the long format, we have to be careful when doing mathematical operations to variables with different units.
+
+- For example, using the purely long format, a single mean for all of the values of population, life expectancy, and GDP would not be meaningful since it would return the mean of values with 3 incompatible units
+
+- The solution to this is to first manipulate the data either by grouping using the `group_by()` as we saw earlier, or we change the structure of the dataframe.
+
+## From Wide to to long with pivot_longer()
+
+Until now, we’ve been using the nicely formatted original gapminder dataset, but ‘real’ data (i.e. our own research data) will never be so well organized. 
+Now we are going to look into the wide formatted version of the gapminder dataset.
+
+We are going to read in the wide gapminder data directly from the url that I'll paste on the chat
+
+```{r}
+
+gap_wide <- read.csv("https://raw.githubusercontent.com/swcarpentry/r-novice-gapminder/gh-pages/_episodes_rmd/data/gapminder_wide.csv")
+
+str(gap_wide)
+```
+
+We now see this dataframe has 38 columns and only 142 rows.
+This format makes it very hard to manipulate our data. Imagine typing each of this columns names!
+
+To change this very wide dataframe layout back to our nice, intermediate (or longer) layout, we will use one of the two available `pivot` functions from the tidyr package.
+
+To convert from wide to a longer format, we will use the `pivot_longer()` function. `pivot_longer()` makes datasets longer by increasing the number of rows and decreasing the number of columns, or ‘lengthening’ your observation variables into a single variable.
+
+**Advice**
+?pivot_longer()
+
+```{r}
+gap_long <- gap_wide %>% 
+  pivot_longer(
+    cols = c(starts_with("gdpPercap"), starts_with("lifeExp"), starts_with("pop")), ##vector of column names
+    names_to = "obstype_year",
+    values_to = "obs_values"
+  )
+
+str(gap_long)
+```
+
+Now, the `observetype_year` contains 2 pieces of information, the observation type (pop, lifeExp and gdpPercap) and the year.
+
+We can split this information into multiple variables using the function `separate()`
+
+```{r}
+gap_long_yr <- gap_long %>% 
+  separate(obstype_year,
+           into = c("obs_type", "year"), sep = "_")
+
+str(gap_long)
+
+##Add line of code to change the class of the year
+gap_long_yr <- gap_long %>% 
+  separate(obstype_year,
+           into = c("obs_type", "year"), sep = "_") %>% 
+  mutate(year = as.integer(year))
+
+```
+
+## Challenge 2
+Using `gap_long`, calculate the mean life expectancy, population, and gdpPercap for each continent. Hint: use the `group_by()` and `summarize()` functions we learned in the dplyr lesson
+
+ANSWER
+```{r}
+gap_long_yr %>%
+  group_by(continent, obs_type) %>%
+   summarize(means=mean(obs_values))
+```
+
+## From long to intermediate format with pivot_wider()
+
+Lets widen our observations using `pivot_wide`. This function is the oposit than `pivot_longer()`
+We sometimes want to have our data in a wider format, for example to finalize a table.
+
+**Look for**
+?pivot_wider()
+
+```{r}
+gap_normal <- gap_long_yr %>% 
+  pivot_wider(names_from = obs_type,
+              values_from = obs_values)
+```
+
+```{r}
+dim(gap_normal)
+
+dim(gapminder)
+
+names(gap_normal)
+
+names(gapminder)
+```
+
+Now we’ve got an intermediate dataframe gap_normal with the same dimensions as the original gapminder, but the order of the variables is different.
+
+```{r}
+gap_normal <- gap_normal[, names(gapminder)]
+
+```
+
+
+Now let’s convert the long all the way back to the wide. In the wide format, we will keep country and continent as ID variables and pivot the observations across the 3 metrics (pop,lifeExp,gdpPercap) and time (year). First we need to create appropriate labels for all our new variables (time*metric combinations) and 
+- we also need to unify our ID variables to simplify the process of defining `gap_wide`.
+
+
+```{r}
+gap_temp <- gap_long_yr %>% 
+  unite(var_ID, continent, country, sep = "_")
+
+str(gap_temp)
+```
+
+
+```{r}
+gap_temp <- gap_long_yr %>%
+    unite(ID_var, continent, country, sep = "_") %>%
+    unite(var_names, obs_type, year, sep = "_")
+str(gap_temp)
+```
+
+Using unite() we now have a single ID variable which is a combination of continent,country,and we have defined variable names. We’re now ready to pipe in pivot_wider()
+
+```{r}
+gap_wide_new <- gap_long_yr %>%
+  unite(ID_var, continent, country, sep = "_") %>%
+  unite(var_names, obs_type, year, sep = "_") %>%
+  pivot_wider(names_from = var_names, 
+              values_from = obs_values)
+
+str(gap_wide_new)
+```
+
+
+## Challenge 3
+Take this 1 step further and create a gap_ludicrously_wide format data by pivoting over countries, year and the 3 metrics? Hint this new dataframe should only have 5 rows.
+
+```{r}
+gap_ludicrously_wide <- gap_long_yr %>%
+   unite(var_names, obs_type, year, country, sep = "_") %>%
+   pivot_wider(names_from = var_names, 
+               values_from = obs_values)
+
+```
+
+
+Now we have a great ‘wide’ format dataframe, but the ID_var could be more usable, let’s separate it into 2 variables with `separate()`
+
+```{r}
+gap_wide_betterID <- separate(gap_wide_new, ID_var, c("continent", "country"), sep="_")
+
+gap_wide_betterID <- gap_long_yr %>%
+    unite(ID_var, continent, country, sep = "_") %>%
+    unite(var_names, obs_type, year, sep = "_") %>%
+    pivot_wider(names_from = var_names, 
+                values_from = obs_values) %>%
+    separate(ID_var, c("continent","country"), sep = "_")
+
+str(gap_wide_betterID)
+
+all.equal(gap_wide, gap_wide_betterID)
+```
+
+## tidiverse
+```{r}
+##install.packages("tidyverse")
+
+#library(tidyverse)
+```
+
